@@ -648,8 +648,10 @@ static int rp1_pio_sm_config_xfer_internal(struct rp1_pio_client *client, uint s
 	chan_name[3] = '\0';
 
 	dma->chan = dma_request_chan(dev, chan_name);
-	if (IS_ERR(dma->chan))
-		return PTR_ERR(dma->chan);
+	if (IS_ERR(dma->chan)) {
+		ret = PTR_ERR(dma->chan);
+		goto err_unclaim;
+	}
 
 	/* Alloc and map bounce buffers */
 	for (dma->buf_count = 0; dma->buf_count < buf_count; dma->buf_count++) {
@@ -674,6 +676,10 @@ static int rp1_pio_sm_config_xfer_internal(struct rp1_pio_client *client, uint s
 	config.src_addr = fifo_addr;
 	config.dst_addr = fifo_addr;
 	config.direction = (dir == RP1_PIO_DIR_TO_SM) ? DMA_MEM_TO_DEV : DMA_DEV_TO_MEM;
+	if (dir == RP1_PIO_DIR_TO_SM)
+		config.dst_maxburst = 8;
+	else
+		config.src_maxburst = 8;
 
 	ret = dmaengine_slave_config(dma->chan, &config);
 	if (ret)
@@ -694,6 +700,7 @@ static int rp1_pio_sm_config_xfer_internal(struct rp1_pio_client *client, uint s
 err_dma_free:
 	rp1_pio_sm_dma_free(dev, dma);
 
+err_unclaim:
 	spin_lock(&pio->lock);
 	client->claimed_dmas &= ~dma_mask;
 	pio->claimed_dmas &= ~dma_mask;
